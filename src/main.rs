@@ -5,6 +5,7 @@ use libc;
 use std::fs;
 
 fn main() {
+    println!("*------Author: 18281253@bjtu.edu.cn-------*");
     loop {
         print!("{} =>> ", env::current_dir().unwrap().to_str().unwrap());  // prompt
         stdout().flush().expect("Error: can not flush the output stream."); // 刷新标准输出
@@ -18,73 +19,94 @@ fn main() {
                 
         match command {
             //构建内部指令
-            "cd" => { // 内部命令1
+            "cd" => { // 内部命令1 改变目录
                 let new_dir = args.peekable().peek().map_or("/", |x| *x);
                 let root = Path::new(new_dir);
                 if let Err(e) = env::set_current_dir(root) {
                     eprintln!("{}", e);
                 }
             },
-            "touch" => { //内部命令2
+            "touch" => { //内部命令2 创建文本文件
                 let docs: Vec<String> = args.peekable().map(|s| s.to_owned() + "\0").collect();
                 if docs.len() < 1 {
                     eprintln!("You need input the file name.");
                     continue;
                 }
-                for doc in docs {
-                    unsafe { 
-                        if let -1 = libc::open(doc.as_bytes().as_ptr() as *const i8,
-                                libc::O_CREAT | libc::O_TRUNC | libc::O_RDWR,
-                                libc::S_IRUSR | libc::S_IWUSR | libc::S_IRGRP | libc::S_IROTH) {
-                                    eprintln!("Can not create the file '{}'", doc);
-                        }
+                let create = |x: &String| unsafe {
+                    if let -1 = libc::open(x.as_bytes().as_ptr() as *const i8,
+                        libc::O_CREAT | libc::O_TRUNC | libc::O_RDWR,
+                        libc::S_IRUSR | libc::S_IWUSR | libc::S_IRGRP | libc::S_IROTH) {
+                        eprintln!("Can not create the file '{}'", x);
                     }
-                }
+                };
+                docs.iter().for_each(create);
             },
-            "cat" => { // 内部命令3
-                let mut txt = "".to_owned();
-                for arg in args {
-                    match fs::read_to_string(arg) {
-                        Ok(str) => txt = str,
-                        Err(e) => eprintln!("Error: {}", e),
-                    }
-                    println!("{}", txt);
-                }
+            "cat" => { // 内部命令3 显示文件内容
+                args.map(|x| fs::read_to_string(x))
+                    .for_each(|x| match x {
+                        Ok(str) => println!("{}", str),
+                        Err(e) => eprintln!("\nError: {}",e),
+                    });
             },
-            "rm" => { // 内部命令4 
-                let files: Vec<String> = args.peekable().map(|s| s.to_owned() + "\0").collect();
-                if files.len() < 1 {
+            "rm" => { // 内部命令4 删除文件&目录
+                let mut names: Vec<String> = args.peekable().map(|x| x.to_owned()).collect();
+                let mut is_dir = false;
+
+                if names.len() < 1 {
                     eprintln!("You need input the file name.");
                     continue;
-                }
-                for file in files {
-                    if let -1 = unsafe { libc::unlink(file.as_bytes().as_ptr() as *const i8) } {
-                        eprintln!("Error: can not delete the file '{}'", file);
+                } else {
+                    match names[0].as_str() {
+                        "-rf" | "-fr" => {
+                            if names.len() < 2 {
+                                eprintln!("You need input the dir name.");
+                                continue;
+                            }
+                            is_dir = true;
+                            names.remove(0);
+                        },
+                        _ => (),
                     }
                 }
+                names.iter().for_each(|x| delete_name(&x, is_dir));
             },
-            "mkdir" => { //内部命令5
-                let chk_dirs: Vec<String> = args.peekable().map(|s| s.to_owned()).collect();
-                if chk_dirs.len() < 1 {
+            "mkdir" => { //内部命令5 创建目录
+                let dirs: Vec<String> = args.peekable().map(|s| s.to_owned()).collect();
+                if dirs.len() < 1 {
                     eprintln!("You need input the dir name.");
                     continue;
                 }
-                let dirs: Vec<String> = chk_dirs.iter().map(|s| s.clone() + "\0").collect();
-                for (i, chk_dir) in chk_dirs.iter().enumerate() {
-                    if let Ok(meta) = fs::metadata(&chk_dir) {
-                        if meta.is_dir() {
-                            eprintln!("'{}' is allready exist dir", chk_dir);
-                        } else {
-                            eprintln!("'{}' is allready exist file", chk_dir);
-                        }
-                        continue;
+                dirs.iter().for_each(|x| {
+                    match fs::metadata(x) {
+                        Ok(meta) if meta.is_dir() => eprintln!("'{}' is allready exist dir", x),
+                        Ok(_) => eprintln!("'{}' is allready exist file", x),
+                        Err(_) => if let -1 = unsafe { 
+                            libc::mkdir((x.to_owned()+"\0").as_bytes().as_ptr() as *const i8, 0o777) } {
+                                eprintln!("Error: Unable to create dir {}",x);
+                        },
                     }
-                    if let -1 = unsafe { libc::mkdir(dirs[i].as_bytes().as_ptr() as *const i8, 0o777) } {
-                        eprintln!("Unable to create dir {}", chk_dir);
-                    }
-                }
+                })
             },
-            "exit" => return, // 内部命令7 退出shell程序
+            "dir" => {
+                let dir = args.peekable().peek().map_or(".", |x| *x);
+                let iter = match fs::read_dir(dir) {
+                    Ok(result) => result,
+                    Err(e) => { eprintln!("Error: {}", e); continue; },
+                };
+                iter.filter(|x| x.is_ok())
+                    .for_each(|x| print!("{}\t", x.unwrap().path().to_str().unwrap()));
+                println!();
+            },
+            "help" => println!("cd\t<dir>\t\t改变当前目录\n\
+                                dir\t<dir>\t\t显示目标目录下内容\n\
+                                mkdir\t<dirname>\t创建新目录\n\
+                                touch\t<file>\t\t新建文本文件\n\
+                                cat\t<file>\t\t打印文本文件内容至终端\n\
+                                rm\t<file>\t\t删除文件\n\
+                                \t-rf <dir>\t递归删除目录\n\
+                                help\t\t\t显示帮助\n\
+                                exit\t\t\t退出shell\n"), // 内部命令6 帮助
+            "exit" => return, // 内部命令8 退出shell程序
             command => { // 外部命令
                 let args = input.trim().split_whitespace();
                 let args: Vec<String> = args.peekable().map(|s| s.to_owned() + "\0").collect();
@@ -106,5 +128,24 @@ fn main() {
                 }
             },
         }
+    }
+}
+
+fn delete_name(name: &str, is_dir: bool) {
+    match is_dir {
+        false => {
+            if let -1 = unsafe { libc::unlink((name.to_owned()+"\0").as_bytes().as_ptr() as *const i8) } {
+                eprintln!("Error: can not delete the file '{}'", name);
+            }; 
+        },
+        true => {
+            let iter = fs::read_dir(Path::new(name)).expect("Can not read the directory.");
+            iter.filter(|x| x.is_ok())
+                .map(|x| x.unwrap())
+                .for_each(|x| delete_name(x.path().to_str().unwrap(), x.metadata().unwrap().is_dir()));
+            if let -1 = unsafe { libc::rmdir((name.to_owned()+"\0").as_bytes().as_ptr() as *const i8)} {
+                eprintln!("Error: can not remove the dir '{}'", name);
+            }
+        },
     }
 }
