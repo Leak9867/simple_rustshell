@@ -1,8 +1,19 @@
 # simple_rustshell
 一个基于rust+libc的简单的linux shell
 
+## 实现功能:
+ * cd
+ * cp(仅限文件)
+ * rm
+ * cat
+ * help
+ * exit
+ * touch
+ * mkdir
+ * export
+ * 外部命令
+
 ## TODO: 
- * 外部指令不基于系统PATH
- * 更多直接系统调用
+ * 光标移动(?)
  * 管道(?)
  * 历史(?)
