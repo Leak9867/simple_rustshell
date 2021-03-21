@@ -2,6 +2,7 @@ use std::io::{stdin, stdout, Write};
 use std::path::Path;
 use std::env;
 use libc;
+use home;
 use std::fs;
 
 fn main() {
@@ -116,11 +117,11 @@ fn main() {
             "export" => { // 内部命令7 添加path
                 let paths: Vec<String> = args.peekable().map(|s| s.to_owned()+"\n").collect();
                 if paths.len() < 1 { eprintln!("You need at least input one path."); continue; }
-                let config_name = b".srshrc\0";
+                let rc_path = home::home_dir().unwrap().to_str().unwrap().to_owned() + "/.srshrc\0";
                 unsafe {
-                    let mut rc_file = libc::syscall(libc::SYS_open, config_name.as_ptr() as *const i8, libc::O_APPEND | libc::O_WRONLY);
+                    let mut rc_file = libc::syscall(libc::SYS_open, rc_path.as_ptr() as *const i8, libc::O_APPEND | libc::O_WRONLY);
                     if rc_file < 0 {
-                        rc_file = libc::syscall(libc::SYS_creat, config_name.as_ptr() as *const i8, 0o666);
+                        rc_file = libc::syscall(libc::SYS_creat, rc_path.as_ptr() as *const i8, 0o666);
                     }
                     paths.iter().for_each(|s| {
                         if libc::syscall(libc::SYS_write, rc_file, s.as_ptr() as *const i8, s.len()) <= 0 {
@@ -166,7 +167,7 @@ fn main() {
 }
 
 fn find_command(command: &str) -> String {
-    let paths = match fs::read_to_string(".srshrc") {
+    let paths = match fs::read_to_string(home::home_dir().unwrap().join(".srshrc")) {
         Ok(s) => s,
         Err(_) => return command.to_owned() + "\0",
     };
